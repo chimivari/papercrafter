@@ -5,3 +5,12 @@ version = 3
 [[package]]
 name = "papercrafter"
 version = "0.1.0"
+dependencies = [
+ "wavefront_obj",
+]
+
+[[package]]
+name = "wavefront_obj"
+version = "11.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "934504ea79927c25f18e980053b64269490284129b327334fc2591daf1539b9c"
