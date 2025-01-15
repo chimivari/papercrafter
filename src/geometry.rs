@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use wavefront_obj::obj;
 
-
+#[derive(Debug, Clone)]
 pub struct Vertex {
     pub x: f64,
     pub y: f64,
@@ -32,10 +32,25 @@ pub fn to_vertices(vertices: Vec<obj::Vertex>) -> Vec<Vertex> {
         .collect()
 }
 
+#[derive(Debug)]
+pub struct Triangle(pub Vertex, pub Vertex, pub Vertex);
 
-pub struct Triangle<'a>(pub &'a Vertex, pub &'a Vertex, pub &'a Vertex);
-
-
-pub struct Mesh<'a> {
-    triangles: Vec<Triangle<'a>>,
+impl Display for Triangle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {}, {})", self.0, self.1, self.2)
+    }
 }
+
+#[derive(Debug)]
+pub struct Mesh {
+    pub triangles: Vec<Triangle>,
+}
+
+impl Mesh {
+    pub fn new() -> Self {
+        Self {
+            triangles: Vec::new(),
+        }
+    }
+}
+
