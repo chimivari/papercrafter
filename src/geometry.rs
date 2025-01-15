@@ -24,3 +24,11 @@ impl Display for Vertex {
         write!(f, "({}, {}, {})", self.x, self.y, self.z)
     }
 }
+
+
+pub struct Triangle(pub Vertex, pub Vertex, pub Vertex);
+
+
+pub struct Mesh {
+    triangles: Vec<Triangle>,
+}
