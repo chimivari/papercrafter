@@ -33,9 +33,9 @@ pub fn to_vertices(vertices: Vec<obj::Vertex>) -> Vec<Vertex> {
 }
 
 
-pub struct Triangle(pub Vertex, pub Vertex, pub Vertex);
+pub struct Triangle<'a>(pub &'a Vertex, pub &'a Vertex, pub &'a Vertex);
 
 
-pub struct Mesh {
-    triangles: Vec<Triangle>,
+pub struct Mesh<'a> {
+    triangles: Vec<Triangle<'a>>,
 }
