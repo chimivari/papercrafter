@@ -28,7 +28,7 @@ impl Display for Vertex {
 pub fn to_vertices(vertices: Vec<obj::Vertex>) -> Vec<Vertex> {
     vertices
         .iter()
-        .map(|&v| Vertex::new(v.x, v.y, v.z))
+        .map(|&v| Vertex::from(v))
         .collect()
 }
 
