@@ -1,6 +1,6 @@
 use std::{env, fs, path::Path};
 
-use geometry::{Mesh, Triangle};
+use geometry::{Mesh, Triangle, Vertex};
 use wavefront_obj::obj::{self, parse};
 
 
@@ -40,7 +40,11 @@ where
                 match s.primitive {
                     obj::Primitive::Triangle(v1, v2, v3) => {
                         let (iv1, iv2, iv3) = (v1.0, v2.0, v3.0);
-                        let triangle = Triangle(vertices[iv1].clone(), vertices[iv2].clone(), vertices[iv3].clone());
+                        let triangle = Triangle::new(
+                            vertices[iv1].clone(), 
+                            vertices[iv2].clone(), 
+                            vertices[iv3].clone(),
+                        );
                         mesh.triangles.push(triangle);
                     }
                     _ => ()
