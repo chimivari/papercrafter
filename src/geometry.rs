@@ -1,8 +1,9 @@
 use std::{fmt::Display, ops::Sub};
 
+use ndarray::{arr2, Array2, Dim, OwnedRepr};
 use wavefront_obj::obj;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vertex {
     pub x: f64,
     pub y: f64,
@@ -56,12 +57,12 @@ pub fn to_vertices(vertices: Vec<obj::Vertex>) -> Vec<Vertex> {
         .collect()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Triangle{
     pub p1: Vertex,
     pub p2: Vertex,
     pub p3: Vertex,
-    pub plane_equation: (f64, f64, f64, f64),
+    pub fund_err_quad: Array2<f64>,
 }
 
 impl Triangle {
@@ -70,17 +71,27 @@ impl Triangle {
             p1,
             p2,
             p3,
-            plane_equation: Self::calculate_plante_equation(p1, p2, p3),
+            fund_err_quad: Self::calculate_fundamental_error_quadric(p1, p2, p3),
         }
     }
 
     /// Calculate plane equation ax + by + cz + d = 0 -> (a, b, c, d)
-    fn calculate_plante_equation(p1: Vertex, p2: Vertex, p3: Vertex) -> (f64, f64, f64, f64) {
+    fn calculate_fundamental_error_quadric(p1: Vertex, p2: Vertex, p3: Vertex) -> Array2<f64> {
         let p1p2 = p2 - p1;
         let p1p3 = p3 - p1;
         let (a, b, c) = p1p2.cross(p1p3).get_tuple();
         let d = -(a * p1.x + b * p1.y + c * p1.z);
-        (a, b, c, d)
+        arr2(&[
+            [a*a, a*b, a*c, a*d],
+            [a*b, b*b, b*c, b*d],
+            [a*c, b*c, c*c, c*d],
+            [a*d, b*d, c*d, d*d],
+        ])
+    }
+
+    /// Returns if p1, p2 or p3 == p
+    pub fn contains_point(&self, p: &Vertex) -> bool {
+        self.p1 == *p || self.p2 == *p || self.p3 == *p
     }
 }
 
@@ -93,12 +104,14 @@ impl Display for Triangle {
 #[derive(Debug)]
 pub struct Mesh {
     pub triangles: Vec<Triangle>,
+    pub vertices: Vec<Vertex>,
 }
 
 impl Mesh {
-    pub fn new() -> Self {
+    pub fn new(triangles: Vec<Triangle>, vertices: Vec<Vertex>) -> Self {
         Self {
-            triangles: Vec::new(),
+            triangles,
+            vertices,
         }
     }
 }
