@@ -34,6 +34,8 @@ impl Vertex {
     pub fn length(&self) -> f64 {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
+
+
 }
 
 impl Sub for Vertex {
@@ -59,6 +61,41 @@ pub fn to_vertices(vertices: Vec<obj::Vertex>) -> Vec<Vertex> {
         .iter()
         .map(|&v| Vertex::from(v))
         .collect()
+}
+
+#[derive(Debug, Clone)]
+pub struct Edge {
+    pub p1: Vertex,
+    pub p2: Vertex,
+}
+
+impl Edge {
+    pub fn new(p1: Vertex, p2: Vertex) -> Self {
+        Self {
+            p1,
+            p2
+        }
+    }
+
+    pub fn length(&self) -> f64 {
+        (self.p2 - self.p1).length()
+    }
+}
+
+impl Display for Edge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.p1, self.p2)
+    }
+}
+
+impl PartialEq for Edge {
+    fn eq(&self, other: &Self) -> bool {
+        (self.p1 == other.p1 && self.p2 == other.p2) || (self.p1 == other.p2 && self.p2 == other.p1)
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -108,15 +145,28 @@ impl Display for Triangle {
 #[derive(Debug)]
 pub struct Mesh {
     pub triangles: Vec<Triangle>,
+    pub edges: Vec<Edge>,
     pub vertices: Vec<Vertex>,
 }
 
 impl Mesh {
-    pub fn new(triangles: Vec<Triangle>, vertices: Vec<Vertex>) -> Self {
+    pub fn new(triangles: Vec<Triangle>, edges: Vec<Edge>, vertices: Vec<Vertex>) -> Self {
         Self {
             triangles,
+            edges,
             vertices,
         }
+    }
+
+    /// Get all [`Edge`] combinaison, with inexistant edge
+    pub fn get_all_edge_combinaisons(&self) -> Vec<Edge> {
+        let mut edges = Vec::new();
+        for i in 0..(self.vertices.len() - 1) {
+            for j in (i + 1)..self.vertices.len() {
+                edges.push(Edge::new(self.vertices[i], self.vertices[j]));
+            }
+        }
+        edges
     }
 }
 

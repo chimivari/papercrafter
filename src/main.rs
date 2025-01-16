@@ -1,6 +1,6 @@
-use std::{env, fs, path::Path};
+use std::{collections::HashMap, env, fs, path::Path};
 
-use geometry::{Mesh, Triangle};
+use geometry::{Edge, Mesh, Triangle};
 use ndarray::Array2;
 use wavefront_obj::obj::{self, parse};
 
@@ -103,16 +103,28 @@ fn main() {
 /// Tranforms the mesh into a pdf with patterns
 fn paper_crafter(
         input_path: String, 
-        _output_path: Option<String>, 
-        _manual_path: Option<String>, 
-        _pair_selection_threshold: f64,
+        output_path: Option<String>, 
+        manual_path: Option<String>, 
+        pair_selection_threshold: f64,
     ) {
-    let meshes = to_meshes(input_path)
+    let meshes = to_meshes(input_path.clone())
         .expect("Input file parsing error");
+
+    let output_path = if output_path.is_some() {
+        output_path.unwrap()
+    } else {
+        "patterns_".to_owned() + &input_path.clone()
+    };
+
+    let manual_path = if manual_path.is_some() {
+        manual_path.unwrap()
+    } else {
+        "manual_".to_owned() + &input_path
+    };
 
     for mesh in meshes {
         // 1. Diminish the number of faces of a mesh
-        let mesh = surface_simplification(mesh);
+        let mesh = surface_simplification(mesh, pair_selection_threshold);
     }
 }
 
@@ -128,6 +140,7 @@ where
     for object in objects {
         let vertices = geometry::to_vertices(object.vertices);
         let mut triangles = Vec::new();
+        let mut edges = Vec::new();
         for g in object.geometry {
             for s in g.shapes {
                 match s.primitive {
@@ -139,12 +152,26 @@ where
                             vertices[iv3].clone(),
                         );
 
+                        let edge1 = Edge::new(vertices[iv1].clone(), vertices[iv2].clone());
+                        let edge2 = Edge::new(vertices[iv2].clone(), vertices[iv3].clone());
+                        let edge3 = Edge::new(vertices[iv3].clone(), vertices[iv1].clone());
+
+                        if !edges.contains(&edge1) {
+                            edges.push(edge1);
+                        }
+                        if !edges.contains(&edge2) {
+                            edges.push(edge2);
+                        }
+                        if !edges.contains(&edge3) {
+                            edges.push(edge3);
+                        }
+
                         triangles.push(triangle);
                     }
                     _ => ()
                 };
             }
-            meshes.push(Mesh::new(triangles.clone(), vertices.clone()));
+            meshes.push(Mesh::new(triangles.clone(), edges.clone(), vertices.clone()));
         }
     }
 
@@ -153,16 +180,29 @@ where
 
 /// Surface simplification using quadric error metrics (by M. Garland & P.S. Heckbert)</br>
 /// Diminish the number of faces of a mesh
-fn surface_simplification(mesh: Mesh) -> Mesh {
-    for v in &mesh.vertices {
-        // Compute the Q matrices for all initial vertices
+fn surface_simplification(mesh: Mesh, pair_selection_threshold: f64) -> Mesh {
+    // Compute the Q matrices for all initial vertices
+    let mut q_matrices = HashMap::new();
+    for i in 0..mesh.vertices.len() {
+        let v= &mesh.vertices[i];
         let mut q: Array2<f64> = Array2::<f64>::zeros((4, 4));
         for t in &mesh.triangles {
             if t.contains_point(&v) {
                 q += &t.fund_err_quad;
             }
         }
+        q_matrices.insert(i, q);
     }
+
+    // Select all valid pairs
+    let mut valid_edges = Vec::new();
+    for edge in mesh.get_all_edge_combinaisons() {
+        if mesh.edges.contains(&edge) || edge.length() < pair_selection_threshold {
+            valid_edges.push(edge);
+        }
+    }
+    
+
     mesh
 }
 
