@@ -1,31 +1,122 @@
-use std::{collections::HashMap, env, fs, path::Path};
+use std::{env, fs, path::Path};
 
 use geometry::{Mesh, Triangle};
-use ndarray::{arr2, Array2};
+use ndarray::Array2;
 use wavefront_obj::obj::{self, parse};
 
 
 mod geometry;
 
+const KNOWN_ARGS_KEYS: &'static[&'static str] = &[
+    "-i",           // .obj input path
+    "-o",           // .obj output path
+    "-m",           // manual path
+    "-t",           // pair selection threshold (f64 >= 0) in surface simplification
+];
+
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let mut args: Vec<String> = env::args().collect();
 
     if args.len() == 1 {
         panic!("No argument found. Please enter 'help'")
     }
 
-    let known_args: [String; 1] = [
-        "-m".to_string(),                   // .obj path
-    ];
+    let mut input_path: Option<String> = None;
+    let mut output_path: Option<String> = None;
+    let mut manual_path: Option<String> = None;
 
-    // Check the first arg
-    if !known_args.contains(&args[1]) {
-        let meshes = to_meshes(Path::new(&args[1]))
-            .expect(format!("The file '{}' coundn't be red and parsed", &args[1]).as_str());
-        paper_crafter(meshes, String::new());
+    // Surface simplification
+    let mut pair_selection_threshold: f64 = 0.;
+
+    // args reading
+    // Try to read input_path.obj
+    if !KNOWN_ARGS_KEYS.contains(&args[1].as_str()) {
+        input_path = Some(args.remove(1));
+        // Try to read output_path.obj
+        if args.len() > 1 && !KNOWN_ARGS_KEYS.contains(&args[1].as_str()) {
+            output_path = Some(args.remove(1));
+            // Try to read manual_path.pdf
+            if args.len() > 1 && !KNOWN_ARGS_KEYS.contains(&args[1].as_str()) {
+                manual_path = Some(args.remove(1));
+            }
+        }
+    }
+    // Read keyed args
+    while args.len() > 2 {
+        let arg_key = &args.remove(1)[..];
+        let arg_value = args.remove(1);
+
+        match arg_key {
+            "-i" => {
+                if input_path.is_some() {
+                    panic!("The input path is specified many times");
+                }
+                else {
+                    input_path = Some(arg_value);
+                }
+            }
+            "-o" => {
+                if output_path.is_some() {
+                    panic!("The output path is specified many times");
+                }
+                else {
+                    output_path = Some(arg_value);
+                }
+            }
+            "-m" => {
+                if manual_path.is_some() {
+                    panic!("The manual path is specified many times");
+                }
+                else {
+                    manual_path = Some(arg_value);
+                }
+            }
+            "-t" => {
+                let threshold = arg_value.parse::<f64>();
+                if threshold.is_err() {
+                    panic!("-t argument should be followed by a positive floating number. Please enter 'help' command.");
+                }
+                else {
+                    pair_selection_threshold = threshold.unwrap();
+                    if pair_selection_threshold < 0. {
+                        panic!("-t argument should be followed by a positive floating number. Please enter 'help' command.");
+                    }
+                }
+            }
+            _ => panic!("Unknown argument {arg_key}. Please enter the 'help' command.")
+        }
+    }
+    
+    if args.len() % 2 != 1 {
+        panic!("Invalid number of arguments");
+    }
+
+    // Process paper crafting
+    paper_crafter(
+        input_path.unwrap(), 
+        output_path, 
+        manual_path, 
+        pair_selection_threshold,
+    );
+}
+
+/// Tranforms the mesh into a pdf with patterns
+fn paper_crafter(
+        input_path: String, 
+        _output_path: Option<String>, 
+        _manual_path: Option<String>, 
+        _pair_selection_threshold: f64,
+    ) {
+    let meshes = to_meshes(input_path)
+        .expect("Input file parsing error");
+
+    for mesh in meshes {
+        // 1. Diminish the number of faces of a mesh
+        let mesh = surface_simplification(mesh);
     }
 }
 
+/// Parse the input_path.obj to a collection of [`Mesh`]
 fn to_meshes<S>(path: S) -> Result<Vec<Mesh>, Box<dyn std::error::Error>> 
 where 
     S: AsRef<Path>
@@ -58,14 +149,6 @@ where
     }
 
     Ok(meshes)
-}
-
-/// Tranforms the mesh into a pdf with patterns
-fn paper_crafter(meshes: Vec<Mesh>, output_path: String) {
-    for mesh in meshes {
-        // 1. Diminish the number of faces of a mesh
-        let mesh = surface_simplification(mesh);
-    }
 }
 
 /// Surface simplification using quadric error metrics (by M. Garland & P.S. Heckbert)</br>

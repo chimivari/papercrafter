@@ -30,6 +30,10 @@ impl Vertex {
     pub fn get_tuple(&self) -> (f64, f64, f64) {
         (self.x, self.y, self.z)
     }
+
+    pub fn length(&self) -> f64 {
+        (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
+    }
 }
 
 impl Sub for Vertex {
