@@ -1,7 +1,7 @@
-use std::{collections::HashMap, env, fs, path::Path};
+use std::{env, fs, path::Path};
 
-use geometry::{Edge, Mesh, Triangle};
-use ndarray::Array2;
+use geometry::SurfaceSimplifier;
+use nalgebra::Vector3;
 use wavefront_obj::obj::{self, parse};
 
 
@@ -107,7 +107,7 @@ fn paper_crafter(
         manual_path: Option<String>, 
         pair_selection_threshold: f64,
     ) {
-    let meshes = to_meshes(input_path.clone())
+    let mut surface_simplifiers = to_meshes(input_path.clone())
         .expect("Input file parsing error");
 
     let output_path = if output_path.is_some() {
@@ -122,87 +122,48 @@ fn paper_crafter(
         "manual_".to_owned() + &input_path
     };
 
-    for mesh in meshes {
-        // 1. Diminish the number of faces of a mesh
-        let mesh = surface_simplification(mesh, pair_selection_threshold);
+    for surf_simpl in &mut surface_simplifiers {
+        println!("{}", surf_simpl.faces.len());
+        surf_simpl.compute_quadric_matrices();
+        surf_simpl.initialize_pairs();
+        surf_simpl.simplify(10);
+        surf_simpl.result();
+        surf_simpl.save_as_obj(&output_path);
+        println!("{}", surf_simpl.faces.len());
     }
 }
 
 /// Parse the input_path.obj to a collection of [`Mesh`]
-fn to_meshes<S>(path: S) -> Result<Vec<Mesh>, Box<dyn std::error::Error>> 
+fn to_meshes<S>(path: S) -> Result<Vec<SurfaceSimplifier>, Box<dyn std::error::Error>> 
 where 
     S: AsRef<Path>
 {
     let content = fs::read_to_string(path)?;
     let objects = parse(content)?.objects;
-    let mut meshes: Vec<Mesh> = Vec::new();
+    let mut surface_simplifiers = Vec::new();
 
     for object in objects {
-        let vertices = geometry::to_vertices(object.vertices);
-        let mut triangles = Vec::new();
-        let mut edges = Vec::new();
+        let vertices: Vec<Vector3<f64>> = object.vertices
+            .iter()
+            .map(|v| Vector3::new(v.x, v.y, v.z))
+            .collect();
+
+        let mut faces = Vec::new();
         for g in object.geometry {
             for s in g.shapes {
                 match s.primitive {
                     obj::Primitive::Triangle(v1, v2, v3) => {
                         let (iv1, iv2, iv3) = (v1.0, v2.0, v3.0);
-                        let triangle = Triangle::new(
-                            vertices[iv1].clone(), 
-                            vertices[iv2].clone(), 
-                            vertices[iv3].clone(),
-                        );
+                        let face = [iv1, iv2, iv3];
 
-                        let edge1 = Edge::new(vertices[iv1].clone(), vertices[iv2].clone());
-                        let edge2 = Edge::new(vertices[iv2].clone(), vertices[iv3].clone());
-                        let edge3 = Edge::new(vertices[iv3].clone(), vertices[iv1].clone());
-
-                        if !edges.contains(&edge1) {
-                            edges.push(edge1);
-                        }
-                        if !edges.contains(&edge2) {
-                            edges.push(edge2);
-                        }
-                        if !edges.contains(&edge3) {
-                            edges.push(edge3);
-                        }
-
-                        triangles.push(triangle);
+                        faces.push(face);
                     }
                     _ => ()
                 };
             }
-            meshes.push(Mesh::new(triangles.clone(), edges.clone(), vertices.clone()));
         }
+        surface_simplifiers.push(SurfaceSimplifier::new(vertices, faces));
     }
 
-    Ok(meshes)
+    Ok(surface_simplifiers)
 }
-
-/// Surface simplification using quadric error metrics (by M. Garland & P.S. Heckbert)</br>
-/// Diminish the number of faces of a mesh
-fn surface_simplification(mesh: Mesh, pair_selection_threshold: f64) -> Mesh {
-    // Compute the Q matrices for all initial vertices
-    let mut q_matrices = HashMap::new();
-    for i in 0..mesh.vertices.len() {
-        let v= &mesh.vertices[i];
-        let mut q: Array2<f64> = Array2::<f64>::zeros((4, 4));
-        for t in &mesh.triangles {
-            if t.contains_point(&v) {
-                q += &t.fund_err_quad;
-            }
-        }
-        q_matrices.insert(i, q);
-    }
-
-    // Select all valid pairs
-    let mut valid_edges = Vec::new();
-    for edge in mesh.get_all_edge_combinaisons() {
-        if mesh.edges.contains(&edge) || edge.length() < pair_selection_threshold {
-            valid_edges.push(edge);
-        }
-    }
-    
-
-    mesh
-}
-

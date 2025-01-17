@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 wavefront_obj = "11.0.0"
-ndarray = "0.16.1"
+nalgebra = "0.33.2"
+obj-exporter = "0.2.0"

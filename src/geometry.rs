@@ -1,172 +1,212 @@
-use std::{fmt::Display, ops::Sub};
+use std::{collections::BinaryHeap, vec};
 
-use ndarray::{arr2, Array2, Dim, OwnedRepr};
-use wavefront_obj::obj;
+use nalgebra::{Matrix4, Vector3, Vector4};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+
+#[derive(Debug)]
 pub struct Vertex {
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
+    pub position: Vector3<f64>,
+    pub quadric: Matrix4<f64>,
 }
 
 impl Vertex {
-    pub fn new(x: f64, y: f64, z: f64) -> Self {
-        Self {x, y, z}
-    }
-
-    pub fn from(v: obj::Vertex) -> Self {
-        Self::new(v.x, v.y, v.z)
-    }
-
-    pub fn cross(&self, o: Self) -> Self {
-        Vertex::new(
-            self.y * o.z - self.z * o.y, 
-            self.z * o.x - self.x * o.z, 
-            self.x * o.y - self.y * o.x,
-        )
-    }
-
-    pub fn get_tuple(&self) -> (f64, f64, f64) {
-        (self.x, self.y, self.z)
-    }
-
-    pub fn length(&self) -> f64 {
-        (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
-    }
-
-
-}
-
-impl Sub for Vertex {
-    type Output = Self;
-
-    fn sub(self, o: Self) -> Self::Output {
-        Self::new(
-            self.x - o.x, 
-            self.y - o.y, 
-            self.z - o.z,
-        )
-    }
-}
-
-impl Display for Vertex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}, {}, {})", self.x, self.y, self.z)
-    }
-}
-
-pub fn to_vertices(vertices: Vec<obj::Vertex>) -> Vec<Vertex> {
-    vertices
-        .iter()
-        .map(|&v| Vertex::from(v))
-        .collect()
-}
-
-#[derive(Debug, Clone)]
-pub struct Edge {
-    pub p1: Vertex,
-    pub p2: Vertex,
-}
-
-impl Edge {
-    pub fn new(p1: Vertex, p2: Vertex) -> Self {
+    pub fn new(position: Vector3<f64>) -> Self {
         Self {
-            p1,
-            p2
+            position,
+            quadric: Matrix4::zeros(),
         }
-    }
-
-    pub fn length(&self) -> f64 {
-        (self.p2 - self.p1).length()
-    }
-}
-
-impl Display for Edge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}, {})", self.p1, self.p2)
-    }
-}
-
-impl PartialEq for Edge {
-    fn eq(&self, other: &Self) -> bool {
-        (self.p1 == other.p1 && self.p2 == other.p2) || (self.p1 == other.p2 && self.p2 == other.p1)
-    }
-
-    fn ne(&self, other: &Self) -> bool {
-        !self.eq(other)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Triangle{
-    pub p1: Vertex,
-    pub p2: Vertex,
-    pub p3: Vertex,
-    pub fund_err_quad: Array2<f64>,
-}
-
-impl Triangle {
-    pub fn new(p1: Vertex, p2: Vertex, p3: Vertex) -> Self {
-        Triangle {
-            p1,
-            p2,
-            p3,
-            fund_err_quad: Self::calculate_fundamental_error_quadric(p1, p2, p3),
-        }
-    }
-
-    /// Calculate plane equation ax + by + cz + d = 0 -> (a, b, c, d)
-    fn calculate_fundamental_error_quadric(p1: Vertex, p2: Vertex, p3: Vertex) -> Array2<f64> {
-        let p1p2 = p2 - p1;
-        let p1p3 = p3 - p1;
-        let (a, b, c) = p1p2.cross(p1p3).get_tuple();
-        let d = -(a * p1.x + b * p1.y + c * p1.z);
-        arr2(&[
-            [a*a, a*b, a*c, a*d],
-            [a*b, b*b, b*c, b*d],
-            [a*c, b*c, c*c, c*d],
-            [a*d, b*d, c*d, d*d],
-        ])
-    }
-
-    /// Returns if p1, p2 or p3 == p
-    pub fn contains_point(&self, p: &Vertex) -> bool {
-        self.p1 == *p || self.p2 == *p || self.p3 == *p
-    }
-}
-
-impl Display for Triangle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}, {}, {})", self.p1, self.p2, self.p3)
     }
 }
 
 #[derive(Debug)]
-pub struct Mesh {
-    pub triangles: Vec<Triangle>,
-    pub edges: Vec<Edge>,
-    pub vertices: Vec<Vertex>,
+pub struct Pair {
+    pub v1: usize,
+    pub v2: usize,
+    pub error: f64,
+    pub optimal_position: Vector4<f64>,
 }
 
-impl Mesh {
-    pub fn new(triangles: Vec<Triangle>, edges: Vec<Edge>, vertices: Vec<Vertex>) -> Self {
+impl Pair {
+    pub fn new(v1: usize, v2: usize) -> Self {
         Self {
-            triangles,
-            edges,
-            vertices,
+            v1,
+            v2,
+            error: f64::INFINITY,
+            optimal_position: Vector4::zeros(),
         }
     }
 
-    /// Get all [`Edge`] combinaison, with inexistant edge
-    pub fn get_all_edge_combinaisons(&self) -> Vec<Edge> {
-        let mut edges = Vec::new();
-        for i in 0..(self.vertices.len() - 1) {
-            for j in (i + 1)..self.vertices.len() {
-                edges.push(Edge::new(self.vertices[i], self.vertices[j]));
+    pub fn compute_error(&mut self, quadric1: &Matrix4<f64>, quadric2: &Matrix4<f64>, pos1: &Vector3<f64>, pos2: &Vector3<f64>)  {
+        let q = quadric1 + quadric2;
+        let q_sub = q.fixed_view::<3, 3>(0, 0);
+        let q_offset = q.fixed_view::<3, 1>(0, 3);
+
+        if let Some(q_sub_inv) = q_sub.try_inverse() {
+            let opt_pos = q_sub_inv * -q_offset;
+            self.optimal_position = Vector4::new(opt_pos.x, opt_pos.y, opt_pos.z, 1.0);
+        }
+        else {
+            let center = (pos1 + pos2) / 2.;
+            self.optimal_position = Vector4::new(center.x, center.y, center.z, 1.);
+        }
+
+        self.error = (self.optimal_position.transpose() * q *self.optimal_position)[0];
+    }
+}
+
+impl PartialEq for Pair {
+    fn eq(&self, other: &Self) -> bool {
+        self.error == other.error
+    }
+}
+
+impl Eq for Pair {}
+
+impl PartialOrd for Pair {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        other.error.partial_cmp(&self.error)
+    }
+}
+
+impl Ord for Pair {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+
+pub struct SurfaceSimplifier {
+    pub vertices: Vec<Vertex>,
+    pub faces: Vec<[usize; 3]>,
+    pub heap: BinaryHeap<Pair>,
+}
+
+impl SurfaceSimplifier {
+    pub fn new(vertices: Vec<Vector3<f64>>, faces: Vec<[usize; 3]>) -> Self {
+        let vertices = vertices.into_iter().map(Vertex::new).collect();
+        Self {
+            vertices,
+            faces,
+            heap: BinaryHeap::new(),
+        }
+    }
+
+    pub fn compute_quadric_matrices(&mut self) {
+        for face in &self.faces {
+            let v1 = self.vertices[face[0]].position;
+            let v2 = self.vertices[face[1]].position;
+            let v3 = self.vertices[face[2]].position;
+
+            let normal = (v2 - v1).cross(&(v3 - v1)).normalize();
+            let d = -normal.dot(&v1);
+            let plane = Vector4::new(normal.x, normal.y, normal.z, d);
+            let quadric = plane * plane.transpose();
+
+            for &i in face {
+                self.vertices[i].quadric += quadric;
             }
         }
-        edges
+    }
+
+    pub fn initialize_pairs(&mut self) {
+        let vertex_count = self.vertices.len();
+        for i in 0..vertex_count {
+            for j in (i + 1)..vertex_count {
+                let mut pair = Pair::new(i, j);
+                pair.compute_error(
+                    &self.vertices[i].quadric, 
+                    &self.vertices[j].quadric, 
+                    &self.vertices[i].position, 
+                    &self.vertices[j].position,
+                );
+                self.heap.push(pair);
+            }
+        }
+    }
+
+    pub fn simplify(&mut self, target_faces: usize) {
+        while self.faces.len() > target_faces && !self.heap.is_empty() {
+            let pair = self.heap.pop().unwrap();
+            let v1 = pair.v1;
+            let v2 = pair.v2;
+
+            let new_position = pair.optimal_position;
+            let mut new_vertex = Vertex::new(new_position.fixed_rows::<3>(0).into());
+            new_vertex.quadric = self.vertices[v1].quadric + self.vertices[v2].quadric;
+            
+            let new_index = self.vertices.len();
+            self.vertices.push(new_vertex);
+
+            self.faces.retain(|face| !face.contains(&v1) && !face.contains(&v2));
+
+            for face in &mut self.faces {
+                for vert in face.iter_mut() {
+                    if *vert == v1 || *vert == v2 {
+                        *vert = new_index;
+                    }
+                }
+            }
+
+            self.heap.clear();
+            self.initialize_pairs();
+        }
+    }
+
+    pub fn save_as_obj(&self, filename: &str) {
+        let obj_vertices: Vec<obj_exporter::Vertex> = self.vertices
+            .iter()
+            .map(|v| obj_exporter::Vertex {
+                x: v.position.x,
+                y: v.position.y,
+                z: v.position.z,
+            })
+            .collect();
+
+        let obj_shapes: Vec<obj_exporter::Shape> = self.faces
+            .iter()
+            .map(|face| obj_exporter::Shape {
+                primitive: obj_exporter::Primitive::Triangle(
+                    (face[0], None, None),
+                    (face[1], None, None),
+                    (face[2], None, None),
+                ),
+                groups: vec![],
+                smoothing_groups: vec![],
+            })
+            .collect();
+
+        let set = obj_exporter::ObjSet {
+            material_library: None,
+            objects: vec![obj_exporter::Object {
+                    name: "SimplifiedObject".to_owned(),
+                    vertices: obj_vertices,
+                    tex_vertices: vec![],
+                    normals: vec![],
+                    geometry: vec![obj_exporter::Geometry {
+                            material_name: None,
+                            shapes: obj_shapes,
+                        }
+                    ]
+                }
+            ]
+        };
+
+        for s in &set.objects[0].geometry[0].shapes {
+            println!("{:?}", s);
+        }
+        obj_exporter::export_to_file(&set, filename)
+            .expect("Unable export object output file");
+    }
+
+    pub fn result(&self) {
+        println!("Simplified vertices : ");
+        for (i, v) in self.vertices.iter().enumerate() {
+            println!("{}: ({:.3}, {:.3}, {:.3})", i, v.position.x, v.position.y, v.position.z);
+        }
+
+        println!("Simplified faces : ");
+        for face in &self.faces {
+            println!("{} {} {}", face[0], face[1], face[2]);
+        }
     }
 }
-
