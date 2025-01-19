@@ -1,11 +1,12 @@
 use std::{env, fs, path::Path};
 
-use geometry::SurfaceSimplifier;
+use mesh_simplifier::{Mesh, Vertex};
 use nalgebra::Vector3;
 use wavefront_obj::obj::{self, parse};
 
 
 mod geometry;
+mod mesh_simplifier;
 
 const KNOWN_ARGS_KEYS: &'static[&'static str] = &[
     "-i",           // .obj input path
@@ -107,7 +108,7 @@ fn paper_crafter(
         manual_path: Option<String>, 
         pair_selection_threshold: f64,
     ) {
-    let mut surface_simplifiers = to_meshes(input_path.clone())
+    let mut meshes = to_meshes(input_path.clone())
         .expect("Input file parsing error");
 
     let output_path = if output_path.is_some() {
@@ -122,30 +123,26 @@ fn paper_crafter(
         "manual_".to_owned() + &input_path
     };
 
-    for surf_simpl in &mut surface_simplifiers {
-        println!("{}", surf_simpl.faces.len());
-        surf_simpl.compute_quadric_matrices();
-        surf_simpl.initialize_pairs();
-        surf_simpl.simplify(10);
-        surf_simpl.result();
-        surf_simpl.save_as_obj(&output_path);
-        println!("{}", surf_simpl.faces.len());
+    for mesh in &mut meshes {
+        println!("start -> {}", mesh.vertices.len());
+        mesh.simplify(0.5);
+        println!("end -> {}", mesh.vertices.len());
     }
 }
 
 /// Parse the input_path.obj to a collection of [`Mesh`]
-fn to_meshes<S>(path: S) -> Result<Vec<SurfaceSimplifier>, Box<dyn std::error::Error>> 
+fn to_meshes<S>(path: S) -> Result<Vec<Mesh>, Box<dyn std::error::Error>> 
 where 
     S: AsRef<Path>
 {
     let content = fs::read_to_string(path)?;
     let objects = parse(content)?.objects;
-    let mut surface_simplifiers = Vec::new();
+    let mut meshes: Vec<Mesh> = Vec::new();
 
     for object in objects {
-        let vertices: Vec<Vector3<f64>> = object.vertices
+        let vertices: Vec<Vertex> = object.vertices
             .iter()
-            .map(|v| Vector3::new(v.x, v.y, v.z))
+            .map(|v| Vertex::new(Vector3::new(v.x, v.y, v.z)))
             .collect();
 
         let mut faces = Vec::new();
@@ -153,17 +150,14 @@ where
             for s in g.shapes {
                 match s.primitive {
                     obj::Primitive::Triangle(v1, v2, v3) => {
-                        let (iv1, iv2, iv3) = (v1.0, v2.0, v3.0);
-                        let face = [iv1, iv2, iv3];
-
-                        faces.push(face);
+                        faces.push((v1.0, v2.0, v3.0));
                     }
                     _ => ()
                 };
             }
         }
-        surface_simplifiers.push(SurfaceSimplifier::new(vertices, faces));
+        meshes.push(Mesh::new(vertices, faces, 0.));
     }
 
-    Ok(surface_simplifiers)
+    Ok(meshes)
 }
