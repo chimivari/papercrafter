@@ -125,7 +125,7 @@ fn paper_crafter(
 
     for mesh in &mut meshes {
         println!("start -> {}", mesh.vertices.len());
-        mesh.simplify(0.5);
+        mesh.simplify(0.9);
         println!("end -> {}", mesh.vertices.len());
     }
 }

@@ -46,15 +46,58 @@ impl Ord for Edge {
     }
 }
 
+pub struct Face {
+    pub points: (usize, usize, usize),
+    pub quadric: Matrix4<f64>,
+}
+
+impl Face {
+    fn new(points: (usize, usize, usize), vertices: &mut (Vertex, Vertex, Vertex)) -> Self {
+        Self {
+            points,
+            quadric: Self::compute_quadric(vertices),
+        }
+    }
+
+    fn compute_quadric(vertices: &mut(Vertex, Vertex, Vertex)) -> Matrix4<f64> {
+        let p1 = vertices.0.position;
+        let p2 = vertices.1.position;
+        let p3 = vertices.1.position;
+
+        let n = (&p2 - p1).cross(&(&p3 - &p1)).normalize();
+            let (a, b, c, d) = (n.x, n.y, n.z, -n.dot(&p1));
+
+        let k =Matrix4::new(
+            a*a, a*b, a*c, a*d, 
+            b*a, b*b, b*c, b*d, 
+            c*a, c*b, c*c, c*d, 
+            d*a, d*b, d*c, d*d
+        );
+
+        vertices.0.quadric += k;
+        vertices.1.quadric += k;
+        vertices.2.quadric += k;
+
+        k
+    }
+}
+
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
-    pub faces: Vec<(usize, usize, usize)>,
+    pub faces: Vec<Face>,
     pub edges: BinaryHeap<Edge>,
     pair_length_threshold_sqrd: f64,
 }
 
 impl Mesh {
     pub fn new(vertices: Vec<Vertex>, faces: Vec<(usize, usize, usize)>, t: f64) -> Self {
+        let faces: Vec<Face> = faces
+            .iter()
+            .map(|&f| 
+                Face::new(f, &mut (vertices[f.0].clone(), vertices[f.1].clone(), vertices[f.2].clone()))
+            )
+            .collect();
+
         let mut mesh = Mesh {
             vertices,
             faces,
@@ -62,36 +105,9 @@ impl Mesh {
             pair_length_threshold_sqrd: t * t,
         };
         
-        mesh.compute_quadrics();
         mesh.compute_valid_edges();
 
         mesh
-    }
-
-    fn compute_quadrics(&mut self) {
-        for v in &mut self.vertices {
-            v.quadric = Matrix4::zeros();
-        }
-
-        for &(v1, v2, v3) in &self.faces {
-            let p1 = self.vertices[v1].position;
-            let p2 = self.vertices[v2].position;
-            let p3 = self.vertices[v3].position;
-
-            let n = (&p2 - p1).cross(&(&p3 - &p1)).normalize();
-            let (a, b, c, d) = (n.x, n.y, n.z, -n.dot(&p1));
-
-            let k = Matrix4::new(
-                a*a, a*b, a*c, a*d, 
-                b*a, b*b, b*c, b*d, 
-                c*a, c*b, c*c, c*d, 
-                d*a, d*b, d*c, d*d
-            );
-
-            self.vertices[v1].quadric += &k;
-            self.vertices[v2].quadric += &k;
-            self.vertices[v3].quadric += &k;
-        }
     }
 
     fn compute_edge_contraction(&self, v1: usize, v2: usize) -> Edge {
@@ -126,7 +142,8 @@ impl Mesh {
     fn compute_valid_edges(&mut self) {
         let mut pairs = HashSet::new();
 
-        for &(p1, p2, p3) in &self.faces {
+        for face in &self.faces {
+            let (p1, p2, p3) = face.points;
             let pair1 = if p1 < p2 {(p1, p2)} else {(p2, p1)};
             let pair2 = if p3 < p2 {(p3, p2)} else {(p2, p3)};
             let pair3 = if p1 < p3 {(p1, p3)} else {(p3, p1)};
@@ -162,51 +179,102 @@ impl Mesh {
         face.0 == p || face.1 == p || face.2 == p
     }
 
+    fn get_common_vertices(edge: &Edge, face: &Face) -> Vec<usize> {
+        let mut vertices = Vec::new();
+        let (p1, p2) = (edge.p1, edge.p2);
+        let (f1, f2, f3) = face.points;
+        if p1 == f1 || p1 == f2 || p1 == f3 {
+            vertices.push(p1);
+        }
+        if p2 == f1 || p2 == f2 || p2 == f3 {
+            vertices.push(p2);
+        }
+        vertices
+    }
+
+    fn get_unshared_vertices(edge: &Edge, face: &Face) -> Vec<usize> {
+        let mut vertices = Vec::new();
+        let (p1, p2) = (edge.p1, edge.p2);
+        let (f1, f2, f3) = face.points;
+        if f1 != p1 && f1 != p2 {
+            vertices.push(f1);
+        }
+        if f2 != p1 && f2 != p2 {
+            vertices.push(f2);
+        }
+        if f3 != p1 && f3 != p2 {
+            vertices.push(f3);
+        }
+        vertices
+    }
+
     pub fn simplify(&mut self, target_ratio: f64) {
         let target_vertices = (self.vertices.len() as f64 * target_ratio).ceil() as usize;
         while self.edges.len() > 0 && self.vertices.len() > target_vertices {
             if let Some(e) = self.edges.pop() {
                 let p1 = e.p1;
                 let p2 = e.p2;
+                let new_vertex = Vertex::new(e.optimal_pos);
 
                 let mut i = 0;
                 while i < self.faces.len() {
-                    let &face = &self.faces[i];
-                    if Self::face_contains(face, p1) && Self::face_contains(face, p2) {
+                    let face = &self.faces[i];
+                    let unshares = Self::get_unshared_vertices(&e, face);
+                    
+                    // If the triangle contains the edge
+                    if unshares.len() == 1 {
+                        // Remove the quadric error of the face from the unshared vertex
+                        let vi = unshares[0];
+                        self.vertices[vi].quadric -= face.quadric;
+                        // Remove the triangle from the mesh
                         self.faces.remove(i);
+                        continue;
                     }
-                    else {
-                        if face.0 == p2 {
-                            self.faces[i].0 = p1;
+                    // If the triangle shares a single vertex with the edge 
+                    else if unshares.len() == 2 {
+                        // Remove the quadric face error from the unshared vertices
+                        for &vi in &unshares {
+                            self.vertices[vi].quadric -= face.quadric;
                         }
-                        else if face.1 == p2 {
-                            self.faces[i].1 = p1;
-                        }
-                        else if face.2 == p2 {
-                            self.faces[i].2 = p1;
-                        }
-
-                        if face.0 > p1 {
-                            self.faces[i].0 -= 1;
-                        }
-                        if face.1 > p1 {
-                            self.faces[i].1 -= 1;
-                        }
-                        if face.2 > p1 {
-                            self.faces[i].2 -= 1;
-                        }
-
-                        i += 1;
+                        // Build the new face with the contraction
+                        // The contraction vertex will replace the p1 index
+                        let new_points = (unshares[0], unshares[1], p1);
+                        // The new face quadric error will be addded in the constructor
+                        // on the face's vertices 
+                        let new_face = Face::new(
+                            new_points, 
+                            &mut (
+                                self.vertices[new_points.0].clone(),
+                                self.vertices[new_points.1].clone(),
+                                new_vertex.clone(),
+                            )
+                        );
+                        self.faces[i] = new_face;
                     }
+
+                    // Change the face indexes because of edge contraction
+                    // The contraction index will be in p1
+                    let face = &mut self.faces[i];
+                    if face.points.0 > p1 {
+                        face.points.0 -= 1;
+                    }
+                    if face.points.1 > p1 {
+                        face.points.1 -= 1;
+                    }
+                    if face.points.2 > p1 {
+                        face.points.2 -= 1;
+                    }
+
+                    i += 1;
                 }
 
                 // p1 -> contraction
-                self.vertices[p1] = Vertex::new(e.optimal_pos);
+                self.vertices[p1] = new_vertex;
                 // Remove p2
                 self.vertices.remove(p2);
 
-                self.compute_quadrics();
                 self.compute_valid_edges();
+
                 println!("still {} vertices", self.vertices.len());
             }
         }
