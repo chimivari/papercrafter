@@ -1,4 +1,4 @@
-use crate::geometry::vec3f::Vec3F;
+use crate::math::vec3f::Vec3F;
 
 
 pub struct Triangle {

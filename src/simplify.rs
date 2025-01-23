@@ -1,6 +1,9 @@
 
-pub mod triangle;
 
 pub struct Simplify {
-    
+
+}
+
+impl Simplify {
+
 }
