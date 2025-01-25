@@ -14,7 +14,7 @@ pub struct Simplify {
 
 impl Simplify {
     /// Load [.obj] file
-    pub fn load_obj(filename: &String) -> Self {
+    pub fn load_obj(filename: &str) -> Self {
         let content = fs::read_to_string(filename)
             .expect(format!("Cannot read {filename}").as_str());
         let objset = parse(content)
@@ -74,4 +74,7 @@ impl Simplify {
         }
     }
 
+    pub fn nb_triangles(&self) -> usize {
+        self.triangles.len()
+    }
 }
