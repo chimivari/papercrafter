@@ -4,6 +4,7 @@ use nalgebra::Vector3;
 pub struct Triangle {
     pub v: [usize; 3],
     pub attr: usize,
+    pub deleted: bool,
     pub material: i32,
     pub uvs: [Vector3<f64>; 3],
 }

@@ -1,3 +1,4 @@
+use core::panic;
 use std::{ffi::OsStr, path::Path};
 
 use simplify::Simplify;
@@ -40,25 +41,42 @@ fn show_help(args: &Vec<String>) {
 }
 
 fn simplify(file_path: &String, export_path: &String, reduce_fraction: f32, agressiveness: f32) {
-    let simpl: Simplify;
     if is_obj(file_path) {
-        simpl = Simplify::load_obj(file_path, true);
-        for i in &simpl.materials {
-            println!("{i}");
+        let mut simpl = Simplify::load_obj(file_path, true);
+        
+        if (simpl.triangles.len() < 3) || (simpl.vertices.len() < 3) {
+            panic!("Triangle size or vertices size is less than 3");
         }
-        println!("\n{:?}\n", simpl.mtllib);
-        for i in &simpl.vertices {
-            println!("{:?}", i);
+
+        let mut reduce_fraction = reduce_fraction;
+
+        if reduce_fraction > 1.0{
+            reduce_fraction = 1.;
         }
-        println!("\n");
-        for i in &simpl.triangles {
-            println!("{:?}", i);
+        else if reduce_fraction <= 0. {
+            panic!("Ratio must be in the range: ]0; 1]");
+        }
+        let target_count = f32::round((simpl.triangles.len() as f32) * reduce_fraction) as usize;
+        
+        if target_count < 4 {
+            panic!("Object will not survice such extreme decimation");
+        }
+
+        let mut start_size = simpl.triangles.len();
+        simpl.simplify_mesh(target_count, agressiveness, true);
+        if simpl.triangles.len() >= start_size {
+            panic!("Unable to reduce mesh");
+        }
+
+        if is_obj(export_path) {
+            simpl.save_obj(export_path);
+            println!("Saved");
         }
     }
     else {
-        println!("File extension not supported : {file_path}");
-        return;
+        panic!("File extension not supported : {file_path}");
     }
+
 }
 
 fn is_obj(file_path: &String) -> bool {

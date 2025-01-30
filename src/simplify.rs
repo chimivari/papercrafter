@@ -1,4 +1,5 @@
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs::{self, File}};
+use std::io::Write;
 
 use nalgebra::Vector3;
 use wavefront_obj::obj;
@@ -55,6 +56,7 @@ impl Simplify {
                                 attr: 0,
                                 material: 0,
                                 uvs: [Vector3::zeros(); 3],
+                                deleted: false,
                             };
                             if process_uv && 
                                 v1.1.is_some() &&
@@ -94,8 +96,82 @@ impl Simplify {
             materials,
         }
     }
+
+    pub fn simplify_mesh(&mut self, target_count: usize, agressiveness: f32, verbose: bool) {
+
+    }
+
+    pub fn save_obj(&self, export_path: &String) {
+        let mut file = File::create(export_path)
+            .expect(format!("Cannot write output file {export_path}").as_str());
+
+        let mut crt_material = -1;
+        let has_uv = (self.triangles.len() > 0 ) &&
+            (self.triangles[0].attr & 4) == 4;  // 4 = TexCoord
+        
+        if let Some(mtllib) = &self.mtllib {
+            writeln!(file, "mtllib {mtllib}")
+                .expect("Cannot wrote mtllib");
+        }
+        for i in 0..self.vertices.len() {
+            writeln!(file, "v {} {} {}", 
+                self.vertices[i].p.x, 
+                self.vertices[i].p.y,
+                self.vertices[i].p.z,
+            )
+            .expect("Cannot write vertices");
+        }
+        if has_uv {
+            for i in 0..self.triangles.len() {
+                if !self.triangles[i].deleted {
+                    writeln!(file, "vt {} {}",
+                        self.triangles[i].uvs[0].x,
+                        self.triangles[i].uvs[0].y,
+                    ).expect("Cannot write vertex textures");
+                    writeln!(file, "vt {} {}",
+                        self.triangles[i].uvs[1].x,
+                        self.triangles[i].uvs[1].y,
+                    ).expect("Cannot write vertex textures");
+                    writeln!(file, "vt {} {}",
+                        self.triangles[i].uvs[2].x,
+                        self.triangles[i].uvs[2].y,
+                    ).expect("Cannot write vertex textures");
+                }
+            }
+        }
+        let mut uv = 1;
+        for i in 0..self.triangles.len() {
+            if !self.triangles[i].deleted {
+                if self.triangles[i].material != crt_material {
+                    crt_material = self.triangles[i].material;
+                    writeln!(file, "usemtl {}", 
+                        self.materials[self.triangles[i].material as usize]
+                    ).expect("Cannot write usemtl");
+                }
+                if has_uv {
+                    writeln!(file, "f {}/{} {}/{} {}/{}",
+                        self.triangles[i].v[0] + 1,
+                        uv,
+                        self.triangles[i].v[1] + 1,
+                        uv + 1,
+                        self.triangles[i].v[2] + 1,
+                        uv + 2,
+                    ).expect("Cannot write face");
+                    uv += 3;
+                }
+                else {
+                    writeln!(file, "f {} {} {}",
+                        self.triangles[i].v[0]+1,
+                        self.triangles[i].v[1]+1,
+                        self.triangles[i].v[2]+1,
+                    ).expect("Cannot write face");
+                }
+            }
+        }
+    }
 }
 
+#[allow(dead_code)]
 enum Attributes {
     None,
     Normal = 2,
