@@ -86,9 +86,9 @@ impl Mesh {
                 let n1 = Neighbour::new(f2.id, f1_futherest, f2_futherest);
                 let n2 = Neighbour::new(f1.id, f2_futherest, f1_futherest);
 
-                faces[0].neighbourhoud.push(neighbours.len());
+                faces[indexes[0]].neighbourhoud.push(neighbours.len());
                 neighbours.push(n1);
-                faces[1].neighbourhoud.push(neighbours.len());
+                faces[indexes[1]].neighbourhoud.push(neighbours.len());
                 neighbours.push(n2);
             }
         }

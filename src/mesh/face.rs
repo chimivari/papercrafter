@@ -138,8 +138,8 @@ impl Display for Face {
         if self.vertices.len() == 0 {return write!(f, "[]");}
         let _ = write!(f, "[");
         for v in &self.vertices {
-            let _ = write!(f, "({}, {}) ", v.x, v.z);
-            // let _ = write!(f, "({:.3}, {:.2}, {:.3}) ", v.x, v.y, v.z);
+            // let _ = write!(f, "({}, {}) ", v.x, v.z);
+            let _ = write!(f, "({:.3}, {:.2}, {:.3}) ", v.x, v.y, v.z);
         }
         write!(f, "]")
     }
