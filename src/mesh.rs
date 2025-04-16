@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 use nalgebra::{Matrix3, Vector3 as Vertex};
 
 use face::Face;
@@ -158,5 +158,16 @@ impl Mesh {
                 }
             }
         }
+    }
+}
+
+impl Display for Mesh {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.faces.len() == 0 {return write!(f, "[]");}
+        let _ = write!(f, "[\n");
+        for face in &self.faces {
+            let _ = write!(f, "\t{}\n", face);
+        }
+        write!(f, "]")
     }
 }
