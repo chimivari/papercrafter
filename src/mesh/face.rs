@@ -16,7 +16,7 @@ impl Face {
         Self {
             id,
             unfolded: false,
-            normal: Vertex::cross(&(vertices[1] - vertices[0]), &(vertices[2] - vertices[0])),
+            normal: Vertex::cross(&(vertices[1] - vertices[0]), &(vertices[2] - vertices[0])).normalize(),
             vertices,
             neighbourhoud: vec![],
         }
@@ -27,7 +27,7 @@ impl Face {
             self[i] = r * self[i];
             round_v(&mut self[i]);
         }
-        self.normal = Vertex::cross(&(self[1] - self[0]), &(self[2] - self[0]));
+        self.normal = Vertex::cross(&(self[1] - self[0]), &(self[2] - self[0])).normalize();
         round_v(&mut self.normal);
     }
 
@@ -37,6 +37,11 @@ impl Face {
         (normal.x.abs() < Self::EPSILON) &&
         ((1. - (normal.y).abs()).abs() < Self::EPSILON) &&
         (normal.z.abs() < Self::EPSILON)
+    }
+
+    /// If both [`faces`] are aligned
+    pub fn is_aligned_to(&self, other: &Face) -> bool {
+        Vertex::dot(&self.normal, &other.normal).abs() > (1. - Self::EPSILON)
     }
 
     /// Get axes for the SAT (works only when face is an unfolded triangle)

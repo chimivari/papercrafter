@@ -83,8 +83,8 @@ impl Mesh {
                     else if t2.1 != pair.0 && t2.1 != pair.1 {1}
                     else {2};
 
-                let n1 = Neighbour::new(f2.id, f1_futherest, f2_futherest);
-                let n2 = Neighbour::new(f1.id, f2_futherest, f1_futherest);
+                let n1 = Neighbour::new(&f1, &f2, f1_futherest, f2_futherest);
+                let n2 = Neighbour::new(&f2, &f1, f2_futherest, f1_futherest);
 
                 faces[indexes[0]].neighbourhoud.push(neighbours.len());
                 neighbours.push(n1);
@@ -92,6 +92,12 @@ impl Mesh {
                 neighbours.push(n2);
             }
         }
+    }
+
+    pub fn align(&mut self, p_id: usize, c_id: usize, n_id: usize) {
+        let n = &self.neighbours[n_id];
+        let p = self.faces[p_id][n.p1];
+        n.align_from_here(p, &mut self.faces[c_id]);
     }
 
 
@@ -158,6 +164,11 @@ impl Mesh {
                 }
             }
         }
+    }
+
+
+    pub fn unfold_mesh(&mut self) {
+        
     }
 }
 

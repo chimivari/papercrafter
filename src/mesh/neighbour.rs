@@ -1,3 +1,5 @@
+use std::f64::consts::PI;
+
 use nalgebra::{Matrix3, Vector3 as Vertex};
 
 use super::face::Face;
@@ -17,25 +19,42 @@ impl Neighbour {
 
     pub const EPSILON: f64 = 1e-8;
 
-    pub fn new(child_face: usize, p_futherest: usize, c_futherest: usize) -> Self {
+    pub fn new(parent: &Face, child: &Face, p_futherest: usize, c_futherest: usize) -> Self {
+        let p1 = (p_futherest + 1) % 3;
+        let p2 = (p_futherest + 2) % 3;
+        /* Compute u and p */
+        let u = parent[p2] - parent[p1];
+        let p = parent[p1];
+        /* Compute rotation matrix */
+        let p_axis =
+            (parent[p_futherest] - Self::project_on(&(parent[p_futherest] - p), &p, &u))
+            .normalize();
+        let wish = -p_axis;
+        let mut c_axis =
+            (child[c_futherest] - Self::project_on(&(child[c_futherest] - p), &p, &u))
+            .normalize();
+        let angle = Vertex::angle(&wish, &c_axis);
+        let mut r = Self::compute_rot_mat(angle, &u);
+        c_axis = r * c_axis;
+        if (1. - Vertex::dot(&c_axis, &wish)).abs() > Self::EPSILON {
+            r = r.transpose();
+        }
         Self {
-            child: child_face,
+            child: child.id,
             p1: (p_futherest + 1) % 3,
             p2: (p_futherest + 2) % 3,
             p_futherest,
             c_futherest,
-            rot: Matrix3::identity(),
+            rot: r,
             collide: false,
         }
     }
 
-    /// Compute intersection between axis and (ab)
-    pub fn intersect(a: &Vertex<f64>, b: &Vertex<f64>, axis: &Vertex<f64>) -> Vertex<f64> {
-        let axis = axis.normalize();
-        let ab= b - a;
-        let t = Vertex::dot(&ab, &axis);
-        let intersection = a + t * axis;
-        intersection
+    /// Project [`u`] on [`axis`] passing through [`p`]
+    pub fn project_on(u: &Vertex<f64>, p: &Vertex<f64>, axis: &Vertex<f64>) -> Vertex<f64> {
+        let norm2 = axis.norm_squared();
+        let projection = (Vertex::dot(u, axis) * axis) / norm2 + p;
+        projection
     }
 
     /// Compute the rotation matrix
@@ -52,33 +71,31 @@ impl Neighbour {
         )
     }
 
-    pub fn before_unfold(&mut self, parent: &Face, child: &Face) {
-        if child.id != self.child {return}
-        /* Compute u and p */
-        let u = parent[self.p2] - parent[self.p1];
-        let p = parent[self.p1];
-        /* Compute rotation matrix */
-        let p_axis =
-            (parent[self.p_futherest] - Self::intersect(&p, &parent[self.p_futherest], &u))
-            .normalize();
-        let wish = -p_axis;
-        let mut c_axis =
-            (child[self.c_futherest] - Self::intersect(&p, &child[self.c_futherest], &u))
-            .normalize();
-        let angle = Vertex::angle(&wish, &c_axis);
-        let mut r = Self::compute_rot_mat(angle, &u);
-        c_axis = r * c_axis;
-        // println!("{c_axis}");
-        if (1. - Vertex::dot(&c_axis, &wish)).abs() > Self::EPSILON {
-            r = r.transpose();
-        }
-        self.rot = r;
-    }
+    // fn before_unfold(&mut self, parent: &Face, child: &Face) {
+    //     if child.id != self.child {return}
+    //     /* Compute u and p */
+    //     let u = parent[self.p2] - parent[self.p1];
+    //     let p = parent[self.p1];
+    //     /* Compute rotation matrix */
+    //     let p_axis =
+    //         (parent[self.p_futherest] - Self::intersect(&p, &parent[self.p_futherest], &u))
+    //         .normalize();
+    //     let wish = -p_axis;
+    //     let mut c_axis =
+    //         (child[self.c_futherest] - Self::intersect(&p, &child[self.c_futherest], &u))
+    //         .normalize();
+    //     let angle = Vertex::angle(&wish, &c_axis);
+    //     let mut r = Self::compute_rot_mat(angle, &u);
+    //     c_axis = r * c_axis;
+    //     // println!("{c_axis}");
+    //     if (1. - Vertex::dot(&c_axis, &wish)).abs() > Self::EPSILON {
+    //         r = r.transpose();
+    //     }
+    //     self.rot = r;
+    // }
 
-    /// Unfold [`face`] from here
-    /// 
-    /// ATTENTION : call before_unfold() before this method
-    pub fn unfold_from_here(&self, p: Vertex<f64>, face: &mut Face) {
+    /// Align [`face`] from here
+    pub fn align_from_here(&self, p: Vertex<f64>, face: &mut Face) {
         // Center face around (0, 0, 0)
         *face -= p;
         // Rotate face
