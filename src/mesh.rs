@@ -7,7 +7,7 @@ use neighbour::Neighbour;
 use crate::triangle::Triangle;
 
 
-mod face;
+pub mod face;
 mod neighbour;
 
 
@@ -94,15 +94,18 @@ impl Mesh {
         }
     }
 
-    pub fn align(&mut self, p_id: usize, c_id: usize, n_id: usize) {
+    pub fn align(&mut self, c_id: usize, n_id: usize) {
         let n = &self.neighbours[n_id];
-        let p = self.faces[p_id][n.p1];
-        n.align_from_here(p, &mut self.faces[c_id]);
+        n.align_from_here(&mut self.faces[c_id]);
     }
 
-
-    pub fn init_unfolding(&mut self, face_id: usize) {
+    /// Flatten all [`marked faces`] from a specified [`face`]
+    pub fn flatten(&mut self, face_id: usize) {
         if self.faces[face_id].unfolded {return;}
+        if self.faces[face_id].is_flat() {
+            self.faces[face_id].unfolded = true;
+            return;
+        }
 
         /* Transpose mesh */
         let v0 = self.faces[face_id][0];
@@ -164,10 +167,23 @@ impl Mesh {
                 }
             }
         }
+        // Update neighbours
+        for f in 0..self.faces.len() {
+            let f = &self.faces[f];
+            if !f.unfolded {
+                for n in 0..f.neighbourhoud.len() {
+                    let n = f.neighbourhoud[n];
+                    let c = &self.faces[self.neighbours[n].child];
+                    self.neighbours[n].reload(f, c);
+                }
+            }
+        }
+        // Set the specified face to unfolded
+        self.faces[face_id].unfolded = true;
     }
 
 
-    pub fn unfold_mesh(&mut self) {
+    pub fn unfold(&mut self) {
         
     }
 }

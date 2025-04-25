@@ -1,4 +1,4 @@
-use std::f64::consts::PI;
+use std::{f64::consts::PI, fmt::{Debug, Display}};
 
 use nalgebra::{Matrix3, Vector3 as Vertex};
 
@@ -7,12 +7,12 @@ use super::face::Face;
 
 pub struct Neighbour {
     pub child: usize,
-    pub p1: usize,
-    pub p2: usize,
-    pub p_futherest: usize,
-    pub c_futherest: usize,
+    p1: Vertex<f64>,
+    p_futherest: usize,
+    c_futherest: usize,
     rot: Matrix3<f64>,
     pub collide: bool,
+    pub angle: f64,
 }
 
 impl Neighbour {
@@ -20,34 +20,17 @@ impl Neighbour {
     pub const EPSILON: f64 = 1e-8;
 
     pub fn new(parent: &Face, child: &Face, p_futherest: usize, c_futherest: usize) -> Self {
-        let p1 = (p_futherest + 1) % 3;
-        let p2 = (p_futherest + 2) % 3;
-        /* Compute u and p */
-        let u = parent[p2] - parent[p1];
-        let p = parent[p1];
-        /* Compute rotation matrix */
-        let p_axis =
-            (parent[p_futherest] - Self::project_on(&(parent[p_futherest] - p), &p, &u))
-            .normalize();
-        let wish = -p_axis;
-        let mut c_axis =
-            (child[c_futherest] - Self::project_on(&(child[c_futherest] - p), &p, &u))
-            .normalize();
-        let angle = Vertex::angle(&wish, &c_axis);
-        let mut r = Self::compute_rot_mat(angle, &u);
-        c_axis = r * c_axis;
-        if (1. - Vertex::dot(&c_axis, &wish)).abs() > Self::EPSILON {
-            r = r.transpose();
-        }
-        Self {
+        let mut s = Self {
             child: child.id,
-            p1: (p_futherest + 1) % 3,
-            p2: (p_futherest + 2) % 3,
+            p1: parent[(p_futherest + 1) % 3],
             p_futherest,
             c_futherest,
-            rot: r,
+            rot: Matrix3::zeros(),
             collide: false,
-        }
+            angle: 0.,
+        };
+        s.reload(&parent, &child);
+        s
     }
 
     /// Project [`u`] on [`axis`] passing through [`p`]
@@ -71,36 +54,54 @@ impl Neighbour {
         )
     }
 
-    // fn before_unfold(&mut self, parent: &Face, child: &Face) {
-    //     if child.id != self.child {return}
-    //     /* Compute u and p */
-    //     let u = parent[self.p2] - parent[self.p1];
-    //     let p = parent[self.p1];
-    //     /* Compute rotation matrix */
-    //     let p_axis =
-    //         (parent[self.p_futherest] - Self::intersect(&p, &parent[self.p_futherest], &u))
-    //         .normalize();
-    //     let wish = -p_axis;
-    //     let mut c_axis =
-    //         (child[self.c_futherest] - Self::intersect(&p, &child[self.c_futherest], &u))
-    //         .normalize();
-    //     let angle = Vertex::angle(&wish, &c_axis);
-    //     let mut r = Self::compute_rot_mat(angle, &u);
-    //     c_axis = r * c_axis;
-    //     // println!("{c_axis}");
-    //     if (1. - Vertex::dot(&c_axis, &wish)).abs() > Self::EPSILON {
-    //         r = r.transpose();
-    //     }
-    //     self.rot = r;
-    // }
+    /// Compute the [`rotation matrix`]
+    /// 
+    /// __Call this method during Mesh::flatten()__
+    pub fn reload(&mut self, parent: &Face, child: &Face) {
+        let p1 = (self.p_futherest + 1) % 3;
+        let p2 = (self.p_futherest + 2) % 3;
+        /* Compute u and p */
+        let u = parent[p2] - parent[p1];
+        let p = parent[p1];
+        /* Compute rotation matrix */
+        let mut p_axis = parent[self.p_futherest] - Self::project_on(&(parent[self.p_futherest] - p), &p, &u);
+        assert!(p_axis.norm() > Self::EPSILON, "\x1b[41mFace too actue : {}\x1b[47m", parent);
+        p_axis = p_axis.normalize();
+        let wish = -p_axis;
+        let mut c_axis = child[self.c_futherest] - Self::project_on(&(child[self.c_futherest] - p), &p, &u);
+        assert!(c_axis.norm() > Self::EPSILON, "\x1b[31mFace too actue : {}\x1b[37m", child);
+        c_axis = c_axis.normalize();
+        let mut angle = Vertex::angle(&wish, &c_axis);
+        let mut r = Self::compute_rot_mat(angle, &u);
+        c_axis = r * c_axis;
+        if (1. - Vertex::dot(&c_axis, &wish)).abs() > Self::EPSILON {
+            r = r.transpose();
+            angle = -angle;
+        }
+        self.angle = angle;
+        self.rot = r;
+    }
 
     /// Align [`face`] from here
-    pub fn align_from_here(&self, p: Vertex<f64>, face: &mut Face) {
+    pub fn align_from_here(&self, face: &mut Face) {
         // Center face around (0, 0, 0)
-        *face -= p;
+        *face -= self.p1;
         // Rotate face
         face.rotate(self.rot);
         // Cancel centering
-        *face += p;
+        *face += self.p1;
+    }
+}
+
+
+impl Display for Neighbour {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "child : {}", self.child)
+    }
+}
+
+impl Debug for Neighbour {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self::Display::fmt(&self, f)
     }
 }
